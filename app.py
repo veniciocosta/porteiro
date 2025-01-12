@@ -1,68 +1,59 @@
-from flask import Flask, request, jsonify, send_from_directory, render_template_string
-import subprocess
+from flask import Flask, request, jsonify, send_file, render_template_string
 import os
+from datetime import datetime
 
 app = Flask(__name__)
 
-# Diretório para salvar os vídeos gerados
-output_dir = "videos"
-os.makedirs(output_dir, exist_ok=True)
+# Diretório para salvar as imagens
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Página HTML com o player
+# Página HTML para exibir a imagem
 html_template = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Stream RTSP</title>
-    <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet">
+    <title>Imagem da Câmera</title>
+    <meta http-equiv="refresh" content="10">
 </head>
 <body>
-    <h1>Stream ao Vivo</h1>
-    <video id="my-video" class="video-js" controls preload="auto" width="640" height="360" data-setup="{}">
-        <source src="{{ stream_url }}" type="application/x-mpegURL">
-    </video>
-    <script src="https://vjs.zencdn.net/7.20.3/video.js"></script>
+    <h1>Imagem da Câmera</h1>
+    <img src="/imagem" alt="Imagem da Câmera" style="max-width: 100%; height: auto;">
 </body>
 </html>
 """
 
 @app.route('/')
 def index():
-    # Define a URL do stream para o player
-    stream_url = f"https://porteiro-production.up.railway.app/stream/stream.m3u8"
-    return render_template_string(html_template, stream_url=stream_url)
+    return render_template_string(html_template)
 
-@app.route('/stream/<path:filename>', methods=['GET'])
-def serve_stream(filename):
-    # Servir os arquivos HLS gerados
-    return send_from_directory(output_dir, filename)
-
-@app.route('/receber_dvr', methods=['POST'])
-def receber_dvr():
-    data = request.json
-    rtsp_url = data.get('url')
-    if not rtsp_url:
-        return jsonify({"error": "URL RTSP não fornecida"}), 400
-
-    # Nome do arquivo HLS
-    output_file = os.path.join(output_dir, "stream.m3u8")
-
-    # Comando FFmpeg para transcodificar o stream RTSP para HLS
-    command = [
-        "ffmpeg",
-        "-i", rtsp_url,
-        "-hls_time", "2",
-        "-hls_list_size", "5",  # Limita a quantidade de segmentos listados no m3u8
-        output_file
-    ]   
-
+@app.route('/upload', methods=['POST'])
+def upload():
     try:
-        # Inicia o processo FFmpeg
-        subprocess.Popen(command)
-        return jsonify({"message": f"Processando stream RTSP: {rtsp_url}", "output": output_file}), 200
+        # Salvar a imagem recebida
+        image_data = request.data
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        filename = os.path.join(UPLOAD_FOLDER, f"imagem_{timestamp}.jpeg")
+        with open(filename, "wb") as f:
+            f.write(image_data)
+        return jsonify({"message": "Imagem recebida com sucesso!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/imagem')
+def imagem():
+    # Buscar a última imagem salva
+    try:
+        imagens = sorted(os.listdir(UPLOAD_FOLDER))
+        if imagens:
+            caminho_imagem = os.path.join(UPLOAD_FOLDER, imagens[-1])
+            return send_file(caminho_imagem, mimetype='image/jpeg')
+        else:
+            return "Nenhuma imagem disponível", 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
