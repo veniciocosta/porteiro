@@ -52,10 +52,9 @@ def receber_dvr():
         "ffmpeg",
         "-i", rtsp_url,
         "-hls_time", "2",
-        "-hls_list_size", "5",
-        "-hls_wrap", "10",
+        "-hls_list_size", "5",  # Limita a quantidade de segmentos listados no m3u8
         output_file
-    ]
+    ]   
 
     try:
         # Inicia o processo FFmpeg
