@@ -4,10 +4,11 @@ import requests
 
 app = Flask(__name__)
 
-# Configurações
+# Configurações do Telegram e RTSP
 RTSP_URL = "rtsp://admin:juss1403@10.0.0.110:554/cam/realmonitor?channel=1&subtype=0"
 TELEGRAM_TOKEN = "8062258264:AAHTdhpbkiH7QB7JaNK9keXkhcici2aJGaY"
 TELEGRAM_CHAT_ID = "6784880297"  # ID padrão usado em outras rotas
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 # Função para capturar imagem via RTSP
 def capturar_imagem():
@@ -24,16 +25,16 @@ def capturar_imagem():
 def enviar_para_telegram(image_path):
     with open(image_path, "rb") as file:
         response = requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
+            f"{TELEGRAM_API_URL}/sendPhoto",
             data={"chat_id": TELEGRAM_CHAT_ID},
             files={"photo": file}
         )
     return response.ok
 
-# Função para enviar mensagem de texto ao Telegram
+# Função para enviar mensagem ao Telegram
 def enviar_mensagem_telegram(chat_id, mensagem):
     response = requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+        f"{TELEGRAM_API_URL}/sendMessage",
         data={"chat_id": chat_id, "text": mensagem}
     )
     return response.ok
@@ -46,7 +47,15 @@ def capture():
         return {"status": "success", "message": "Imagem enviada para o Telegram!"}, 200
     return {"status": "error", "message": "Falha ao capturar ou enviar imagem!"}, 500
 
-# Rota para teste (recebe sinal do ESP8266 e envia mensagem "Hello World")
+# Rota para teste de mensagem ao ID específico do Telegram
+@app.route("/send_message", methods=["POST"])
+def send_message():
+    mensagem = "Mensagem de teste para o ID específico do Telegram."
+    if enviar_mensagem_telegram(TELEGRAM_CHAT_ID, mensagem):
+        return {"status": "success", "message": "Mensagem enviada com sucesso!"}, 200
+    return {"status": "error", "message": "Falha ao enviar mensagem!"}, 500
+
+# Rota de teste para o ESP8266
 @app.route("/teste", methods=["POST"])
 def teste():
     mensagem = "Hello World! Mensagem recebida do ESP8266."
@@ -54,23 +63,30 @@ def teste():
         return {"status": "success", "message": "Mensagem enviada para o Telegram!"}, 200
     return {"status": "error", "message": "Falha ao enviar mensagem!"}, 500
 
-# Rota para responder ao usuário com seu próprio ID do Telegram
-@app.route("/get_user_id", methods=["POST"])
-def get_user_id():
+# Rota para lidar com o webhook do Telegram
+@app.route("/webhook", methods=["POST"])
+def webhook():
     data = request.get_json()
-    if not data or "message" not in data:
-        return {"status": "error", "message": "Dados inválidos ou ausentes!"}, 400
 
-    # Extrair informações do corpo da requisição
-    message = data["message"]
-    chat_id = message["chat"]["id"]
+    # Verificar se os dados possuem o campo "message"
+    if "message" in data:
+        chat_id = data["message"]["chat"]["id"]
+        texto = data["message"].get("text", "")
 
-    # Responder ao usuário com seu próprio ID
-    mensagem = f"Seu ID do Telegram é: {chat_id}"
-    if enviar_mensagem_telegram(chat_id, mensagem):
-        return {"status": "success", "message": "ID enviado para o usuário!"}, 200
-    return {"status": "error", "message": "Falha ao enviar ID para o usuário!"}, 500
+        # Processar a mensagem recebida
+        if texto.lower() == "olá":
+            mensagem_resposta = "Olá! Como posso ajudar você hoje?"
+        elif texto.lower() == "id":
+            mensagem_resposta = f"Seu ID do Telegram é: {chat_id}"
+        else:
+            mensagem_resposta = f"Você disse: {texto}"
+
+        # Enviar a resposta ao usuário
+        enviar_mensagem_telegram(chat_id, mensagem_resposta)
+
+    return {"status": "ok"}, 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
