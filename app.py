@@ -7,7 +7,7 @@ app = Flask(__name__)
 # Configurações
 RTSP_URL = "rtsp://admin:juss1403@10.0.0.110:554/cam/realmonitor?channel=1&subtype=0"
 TELEGRAM_TOKEN = "8062258264:AAHTdhpbkiH7QB7JaNK9keXkhcici2aJGaY"
-TELEGRAM_CHAT_ID = "6784880297"
+TELEGRAM_CHAT_ID = "6784880297"  # ID padrão usado em outras rotas
 
 # Função para capturar imagem via RTSP
 def capturar_imagem():
@@ -31,10 +31,10 @@ def enviar_para_telegram(image_path):
     return response.ok
 
 # Função para enviar mensagem de texto ao Telegram
-def enviar_mensagem_telegram(mensagem):
+def enviar_mensagem_telegram(chat_id, mensagem):
     response = requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-        data={"chat_id": TELEGRAM_CHAT_ID, "text": mensagem}
+        data={"chat_id": chat_id, "text": mensagem}
     )
     return response.ok
 
@@ -49,10 +49,28 @@ def capture():
 # Rota para teste (recebe sinal do ESP8266 e envia mensagem "Hello World")
 @app.route("/teste", methods=["POST"])
 def teste():
-    mensagem = "Notificação flask: Tem gente no portão!."
-    if enviar_mensagem_telegram(mensagem):
+    mensagem = "Hello World! Mensagem recebida do ESP8266."
+    if enviar_mensagem_telegram(TELEGRAM_CHAT_ID, mensagem):
         return {"status": "success", "message": "Mensagem enviada para o Telegram!"}, 200
     return {"status": "error", "message": "Falha ao enviar mensagem!"}, 500
 
+# Rota para responder ao usuário com seu próprio ID do Telegram
+@app.route("/get_user_id", methods=["POST"])
+def get_user_id():
+    data = request.get_json()
+    if not data or "message" not in data:
+        return {"status": "error", "message": "Dados inválidos ou ausentes!"}, 400
+
+    # Extrair informações do corpo da requisição
+    message = data["message"]
+    chat_id = message["chat"]["id"]
+
+    # Responder ao usuário com seu próprio ID
+    mensagem = f"Seu ID do Telegram é: {chat_id}"
+    if enviar_mensagem_telegram(chat_id, mensagem):
+        return {"status": "success", "message": "ID enviado para o usuário!"}, 200
+    return {"status": "error", "message": "Falha ao enviar ID para o usuário!"}, 500
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
