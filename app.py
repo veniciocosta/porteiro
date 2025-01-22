@@ -1,84 +1,58 @@
-from flask import Flask, request, jsonify
-from flask import send_from_directory
-from pyftpdlib.authorizers import DummyAuthorizer
-from pyftpdlib.handlers import FTPHandler
-from pyftpdlib.servers import FTPServer
-import os
-import threading
-import telegram
+from flask import Flask, request
+import cv2
+import requests
 
-# Configuração inicial do Flask
 app = Flask(__name__)
 
-# Diretório onde as imagens serão armazenadas
-UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # Cria o diretório se não existir
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# Configurações
+RTSP_URL = "rtsp://admin:juss1403@10.0.0.110:554/cam/realmonitor?channel=1&subtype=0"
+TELEGRAM_TOKEN = "8062258264:AAHTdhpbkiH7QB7JaNK9keXkhcici2aJGaY"
+TELEGRAM_CHAT_ID = "6784880297"
 
-# Token do Bot do Telegram (substitua pelo seu token)
-TELEGRAM_TOKEN = '8062258264:AAHTdhpbkiH7QB7JaNK9keXkhcici2aJGaY'
-TELEGRAM_CHAT_ID = '6784880297'  # Substitua pelo chat_id do Telegram
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+# Função para capturar imagem via RTSP
+def capturar_imagem():
+    cap = cv2.VideoCapture(RTSP_URL)
+    ret, frame = cap.read()
+    cap.release()
+    if ret:
+        image_path = "frame.jpg"
+        cv2.imwrite(image_path, frame)
+        return image_path
+    return None
 
-# Função para enviar uma mensagem ao Telegram
-def enviar_telegram(mensagem, arquivo=None):
-    try:
-        if arquivo:
-            bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=open(arquivo, 'rb'))
-        else:
-            bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=mensagem)
-    except Exception as e:
-        print(f"Erro ao enviar mensagem para o Telegram: {e}")
+# Função para enviar imagem ao Telegram
+def enviar_para_telegram(image_path):
+    with open(image_path, "rb") as file:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
+            data={"chat_id": TELEGRAM_CHAT_ID},
+            files={"photo": file}
+        )
+    return response.ok
 
-# Rota para receber acionamento do ESP8266
-@app.route('/acionar', methods=['GET'])
-def acionar():
-    """
-    Essa rota será acionada pelo ESP8266 ao pressionar o botão.
-    """
-    # Envia uma mensagem de confirmação ao Telegram
-    enviar_telegram("Botão pressionado! Enviando a última imagem do DVR.")
-    
-    # Encontra a última imagem salva no diretório
-    arquivos = sorted(os.listdir(app.config['UPLOAD_FOLDER']), reverse=True)
-    if arquivos:
-        ultima_imagem = os.path.join(app.config['UPLOAD_FOLDER'], arquivos[0])
-        enviar_telegram("Última imagem capturada:", arquivo=ultima_imagem)
-        return jsonify({'status': 'Imagem enviada para o Telegram!'})
-    else:
-        return jsonify({'status': 'Nenhuma imagem encontrada no servidor.'})
+# Função para enviar mensagem de texto ao Telegram
+def enviar_mensagem_telegram(mensagem):
+    response = requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+        data={"chat_id": TELEGRAM_CHAT_ID, "text": mensagem}
+    )
+    return response.ok
 
-# Rota para teste de envio ao Telegram
-@app.route('/teste', methods=['GET'])
-def teste_envio():
-    """
-    Rota para testar envio de mensagens ao Telegram sem o ESP8266.
-    """
-    enviar_telegram("Teste de envio para o Telegram funcionando!")
-    return jsonify({'status': 'Teste enviado com sucesso!'})
+# Rota para capturar imagem e enviar ao Telegram
+@app.route("/capture", methods=["POST"])
+def capture():
+    image_path = capturar_imagem()
+    if image_path and enviar_para_telegram(image_path):
+        return {"status": "success", "message": "Imagem enviada para o Telegram!"}, 200
+    return {"status": "error", "message": "Falha ao capturar ou enviar imagem!"}, 500
 
-# Configuração do servidor FTP
-def iniciar_servidor_ftp():
-    """
-    Configura e inicia um servidor FTP para receber imagens do DVR.
-    """
-    authorizer = DummyAuthorizer()
-    authorizer.add_user('user', 'password', UPLOAD_FOLDER, perm='elradfmw')  # Substitua por usuário/senha seguros
-    handler = FTPHandler
-    handler.authorizer = authorizer
-    handler.banner = "Servidor FTP pronto para receber arquivos."
-    
-    address = ('0.0.0.0', 21)  # IP e porta do servidor FTP
-    server = FTPServer(address, handler)
-    print("Servidor FTP iniciado na porta 21...")
-    server.serve_forever()
+# Rota para teste (recebe sinal do ESP8266 e envia mensagem "Hello World")
+@app.route("/teste", methods=["POST"])
+def teste():
+    mensagem = "Notificação flask: Tem gente no portão!."
+    if enviar_mensagem_telegram(mensagem):
+        return {"status": "success", "message": "Mensagem enviada para o Telegram!"}, 200
+    return {"status": "error", "message": "Falha ao enviar mensagem!"}, 500
 
-# Inicializa o servidor FTP em uma thread separada
-ftp_thread = threading.Thread(target=iniciar_servidor_ftp, daemon=True)
-ftp_thread.start()
-
-# Inicializa o servidor Flask
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-
-
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
