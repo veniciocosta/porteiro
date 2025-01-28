@@ -1,14 +1,24 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import cv2
 import requests
+import os
+from pyftpdlib.authorizers import DummyAuthorizer
+from pyftpdlib.handlers import FTPHandler
+from pyftpdlib.servers import FTPServer
+from threading import Thread
 
 app = Flask(__name__)
+
+# Diretório para salvar as imagens enviadas via FTP
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Configurações do Telegram e RTSP
 RTSP_URL = "rtsp://admin:juss1403@10.0.0.110:554/cam/realmonitor?channel=1&subtype=0"
 TELEGRAM_TOKEN = "8062258264:AAHTdhpbkiH7QB7JaNK9keXkhcici2aJGaY"
 TELEGRAM_CHAT_ID = "6784880297"  # ID padrão usado em outras rotas
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+DEEP_SEAK_APIP_KEY = "sk-333f1bf2aea14144a87dfd82e751de59"
 
 # Função para capturar imagem via RTSP
 def capturar_imagem():
@@ -86,7 +96,23 @@ def webhook():
 
     return {"status": "ok"}, 200
 
+# Configurar o servidor FTP
+def iniciar_servidor_ftp():
+    authorizer = DummyAuthorizer()
+    # Usuário anônimo com permissão para fazer upload
+    authorizer.add_anonymous(UPLOAD_DIR, perm="elradfmw")
+    
+    handler = FTPHandler
+    handler.authorizer = authorizer
+    handler.banner = "Servidor FTP Flask pronto para receber arquivos."
+    
+    # Configurar o servidor no host e porta específicos
+    server = FTPServer(("0.0.0.0", 21), handler)
+    print("Servidor FTP iniciado na porta 21.")
+    server.serve_forever()
+
+# Iniciar o servidor FTP em uma thread separada
+Thread(target=iniciar_servidor_ftp, daemon=True).start()
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
-
